@@ -27,6 +27,17 @@ type FileStatus = {
 }
 
 type StatusResponse = { suprimentos: FileStatus; solicitacoes: FileStatus }
+type UploadKind = "export-suprimentos" | "solicitacoes"
+type UploadProgress = { kind: UploadKind; uploadedBytes: number; totalBytes: number }
+
+class UploadHttpError extends Error {
+  status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
 
 function formatBytes(value?: number) {
   if (!value || value <= 0) return "0 B"
@@ -62,14 +73,93 @@ async function getStatus() {
   return (await res.json()) as StatusResponse
 }
 
-async function uploadFile(kind: "export-suprimentos" | "solicitacoes", file: File) {
+async function uploadMultipart(kind: UploadKind, file: File) {
   const form = new FormData()
   form.set("kind", kind)
   form.set("file", file)
 
   const res = await fetch("/api/dados/upload", { method: "POST", body: form })
   const payload = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
-  if (!res.ok) throw new Error(payload?.error ?? "Falha ao enviar arquivo.")
+  if (!res.ok) {
+    const message =
+      payload?.error ?? (res.status === 413 ? "Arquivo muito grande para enviar." : "Falha ao enviar arquivo.")
+    throw new UploadHttpError(res.status, message)
+  }
+}
+
+function randomUploadId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+async function chunkedControl(op: "abort" | "complete", kind: UploadKind, uploadId: string) {
+  const res = await fetch("/api/dados/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ op, kind, uploadId }),
+  })
+  const payload = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+  if (!res.ok) throw new UploadHttpError(res.status, payload?.error ?? "Falha ao processar upload.")
+}
+
+async function uploadChunked(kind: UploadKind, file: File, onProgress?: (progress: UploadProgress) => void) {
+  const chunkSize = 1024 * 1024 // 1MB
+  const uploadId = randomUploadId()
+  const totalBytes = file.size
+  const totalChunks = Math.ceil(totalBytes / chunkSize)
+
+  onProgress?.({ kind, uploadedBytes: 0, totalBytes })
+
+  try {
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+      const start = chunkIndex * chunkSize
+      const end = Math.min(start + chunkSize, totalBytes)
+      const chunk = file.slice(start, end)
+
+      const params = new URLSearchParams({
+        kind,
+        uploadId,
+        fileName: file.name ?? "",
+        totalSize: String(totalBytes),
+        chunkSize: String(chunkSize),
+        chunkIndex: String(chunkIndex),
+        totalChunks: String(totalChunks),
+      })
+
+      const res = await fetch(`/api/dados/upload?${params.toString()}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: chunk,
+      })
+      const payload = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+      if (!res.ok) {
+        throw new UploadHttpError(res.status, payload?.error ?? `Falha ao enviar parte ${chunkIndex + 1}/${totalChunks}.`)
+      }
+
+      onProgress?.({ kind, uploadedBytes: end, totalBytes })
+    }
+
+    await chunkedControl("complete", kind, uploadId)
+  } catch (e) {
+    await chunkedControl("abort", kind, uploadId).catch(() => null)
+    throw e
+  }
+}
+
+async function uploadFile(kind: UploadKind, file: File, onProgress?: (progress: UploadProgress) => void) {
+  onProgress?.({ kind, uploadedBytes: 0, totalBytes: file.size })
+
+  try {
+    await uploadMultipart(kind, file)
+    onProgress?.({ kind, uploadedBytes: file.size, totalBytes: file.size })
+  } catch (e) {
+    if (e instanceof UploadHttpError && e.status === 413) {
+      await uploadChunked(kind, file, onProgress)
+      onProgress?.({ kind, uploadedBytes: file.size, totalBytes: file.size })
+      return
+    }
+    throw e
+  }
 }
 
 export function ExcelDataUploadButton() {
@@ -85,6 +175,7 @@ export function ExcelDataUploadButton() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [progress, setProgress] = useState<UploadProgress | null>(null)
 
   const missingData = useMemo(() => {
     if (!status) return false
@@ -110,6 +201,7 @@ export function ExcelDataUploadButton() {
       setSolicitacoesFile(null)
       setError(null)
       setSuccess(null)
+      setProgress(null)
     } else {
       refreshStatus().catch(() => null)
     }
@@ -118,6 +210,7 @@ export function ExcelDataUploadButton() {
   const onUpload = async () => {
     setError(null)
     setSuccess(null)
+    setProgress(null)
 
     if (!exportFile && !solicitacoesFile) {
       setError("Selecione pelo menos um arquivo.")
@@ -126,8 +219,8 @@ export function ExcelDataUploadButton() {
 
     setUploading(true)
     try {
-      if (exportFile) await uploadFile("export-suprimentos", exportFile)
-      if (solicitacoesFile) await uploadFile("solicitacoes", solicitacoesFile)
+      if (exportFile) await uploadFile("export-suprimentos", exportFile, setProgress)
+      if (solicitacoesFile) await uploadFile("solicitacoes", solicitacoesFile, setProgress)
       await refreshStatus()
       router.refresh()
       setSuccess("Arquivo(s) atualizado(s).")
@@ -200,6 +293,13 @@ export function ExcelDataUploadButton() {
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {progress && progress.totalBytes > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Enviando {progress.kind === "export-suprimentos" ? "Export Suprimentos" : "FW Solicitacoes"}:{" "}
+              {Math.round((progress.uploadedBytes / progress.totalBytes) * 100)}% ({formatBytes(progress.uploadedBytes)} /{" "}
+              {formatBytes(progress.totalBytes)})
+            </p>
+          )}
           {success && <p className="text-sm text-green-700">{success}</p>}
         </div>
 
@@ -213,4 +313,3 @@ export function ExcelDataUploadButton() {
     </Dialog>
   )
 }
-
