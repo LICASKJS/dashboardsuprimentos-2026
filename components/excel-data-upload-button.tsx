@@ -99,7 +99,9 @@ async function chunkedControl(op: "abort" | "complete", kind: UploadKind, upload
     body: JSON.stringify({ op, kind, uploadId }),
   })
   const payload = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
-  if (!res.ok) throw new UploadHttpError(res.status, payload?.error ?? "Falha ao processar upload.")
+  if (!res.ok) {
+    throw new UploadHttpError(res.status, payload?.error ?? `Falha ao processar upload (HTTP ${res.status}).`)
+  }
 }
 
 async function uploadChunked(kind: UploadKind, file: File, onProgress?: (progress: UploadProgress) => void) {
@@ -127,13 +129,14 @@ async function uploadChunked(kind: UploadKind, file: File, onProgress?: (progres
       })
 
       const res = await fetch(`/api/dados/upload?${params.toString()}`, {
-        method: "PUT",
+        method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: chunk,
       })
       const payload = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
       if (!res.ok) {
-        throw new UploadHttpError(res.status, payload?.error ?? `Falha ao enviar parte ${chunkIndex + 1}/${totalChunks}.`)
+        const fallback = `Falha ao enviar parte ${chunkIndex + 1}/${totalChunks} (HTTP ${res.status}).`
+        throw new UploadHttpError(res.status, payload?.error ?? fallback)
       }
 
       onProgress?.({ kind, uploadedBytes: end, totalBytes })
@@ -148,6 +151,14 @@ async function uploadChunked(kind: UploadKind, file: File, onProgress?: (progres
 
 async function uploadFile(kind: UploadKind, file: File, onProgress?: (progress: UploadProgress) => void) {
   onProgress?.({ kind, uploadedBytes: 0, totalBytes: file.size })
+
+  // If your server/proxy rejects large multipart requests (413), go chunked right away.
+  const multipartThresholdBytes = 8 * 1024 * 1024 // 8MB
+  if (file.size > multipartThresholdBytes) {
+    await uploadChunked(kind, file, onProgress)
+    onProgress?.({ kind, uploadedBytes: file.size, totalBytes: file.size })
+    return
+  }
 
   try {
     await uploadMultipart(kind, file)

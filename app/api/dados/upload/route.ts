@@ -55,12 +55,41 @@ function isMultipartRequest(request: Request) {
   return contentType.includes("multipart/form-data")
 }
 
+function isOctetStreamRequest(request: Request) {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? ""
+  return contentType.includes("application/octet-stream")
+}
+
 function isValidUploadId(value: string) {
   return /^[a-z0-9-]{8,80}$/i.test(value)
 }
 
 function jsonError(status: number, error: string) {
   return NextResponse.json({ ok: false, error }, { status, headers: { "Cache-Control": "no-store" } })
+}
+
+function getNodeErrorCode(error: unknown) {
+  if (!error || typeof error !== "object") return undefined
+  if (!("code" in error)) return undefined
+  const code = (error as { code?: unknown }).code
+  return typeof code === "string" ? code : undefined
+}
+
+function internalUploadError(error: unknown) {
+  const code = getNodeErrorCode(error)
+  console.error("Upload error", error)
+
+  if (code === "EACCES" || code === "EPERM") {
+    return jsonError(500, "Sem permissao para gravar os arquivos de dados no servidor.")
+  }
+  if (code === "EROFS") {
+    return jsonError(500, "O servidor esta em modo somente leitura (nao foi possivel gravar os arquivos).")
+  }
+  if (code === "ENOSPC") {
+    return jsonError(500, "Sem espaco em disco no servidor para salvar o arquivo.")
+  }
+
+  return jsonError(500, `Erro interno ao processar upload${code ? ` (${code})` : ""}.`)
 }
 
 async function setActiveFile(kind: UploadKind, relativeDestPath: string) {
@@ -111,16 +140,14 @@ async function ensureChunkedPartFile(kind: UploadKind, uploadId: string, totalSi
   await fs.mkdir(path.dirname(partPath), { recursive: true })
   try {
     const stat = await fs.stat(partPath)
-    if (stat.size !== totalSize) {
-      return { ok: false as const, error: "Upload em partes inconsistente (tamanho diferente)." }
+    if (!stat.isFile()) {
+      return { ok: false as const, error: "Upload em partes inconsistente (arquivo parcial invalido)." }
+    }
+    if (stat.size > totalSize) {
+      return { ok: false as const, error: "Upload em partes inconsistente (arquivo maior que o esperado)." }
     }
   } catch {
-    const handle = await fs.open(partPath, "w+")
-    try {
-      await handle.truncate(totalSize)
-    } finally {
-      await handle.close()
-    }
+    await fs.writeFile(partPath, new Uint8Array())
   }
   return { ok: true as const, partPath }
 }
@@ -149,6 +176,15 @@ async function completeChunkedUpload(kind: UploadKind, uploadId: string) {
   }
 
   const partPath = resolveDataFilePath(getChunkedPartRelPath(kind, uploadId))
+  const partStat = await fs
+    .stat(partPath)
+    .then((stat) => (stat.isFile() ? stat : null))
+    .catch(() => null)
+  if (!partStat) return jsonError(400, "Upload em partes corrompido.")
+  if (partStat.size !== manifest.totalSize) {
+    return jsonError(400, "Upload em partes incompleto (tamanho diferente).")
+  }
+
   const ext = guessExtension(manifest.originalName, kind)
   const destFileName = `${kind}-${safeTimestamp()}.${ext}`
   const relativeDestPath = path.posix.join(UPLOAD_DIR_REL, destFileName)
@@ -201,7 +237,7 @@ async function handleMultipartUpload(request: Request) {
   )
 }
 
-export async function PUT(request: Request) {
+async function handleChunkUpload(request: Request) {
   const url = new URL(request.url)
   const kindParam = url.searchParams.get("kind")
   const uploadId = url.searchParams.get("uploadId") ?? ""
@@ -267,7 +303,13 @@ export async function PUT(request: Request) {
   const part = await ensureChunkedPartFile(kind, uploadId, totalSize)
   if (!part.ok) return jsonError(400, part.error)
 
-  const handle = await fs.open(part.partPath, "r+")
+  const handle = await fs.open(part.partPath, "r+").catch((error: unknown) => {
+    const code = getNodeErrorCode(error)
+    if (code === "ENOENT") {
+      return fs.open(part.partPath, "w+")
+    }
+    throw error
+  })
   try {
     await handle.write(chunkBuffer, 0, chunkBuffer.length, offset)
   } finally {
@@ -283,28 +325,44 @@ export async function PUT(request: Request) {
   )
 }
 
+export async function PUT(request: Request) {
+  try {
+    return handleChunkUpload(request)
+  } catch (error) {
+    return internalUploadError(error)
+  }
+}
+
 export async function POST(request: Request) {
-  if (isJsonRequest(request)) {
-    const body = (await request.json().catch(() => null)) as ChunkedUploadRequestBody | null
-    if (!body || typeof body !== "object") return jsonError(400, "Payload invalido.")
-    if (!isAllowedKind(body.kind)) return jsonError(400, "Tipo de upload invalido.")
-    if (!body.uploadId || !isValidUploadId(body.uploadId)) return jsonError(400, "UploadId invalido.")
-
-    if (body.op === "abort") {
-      await abortChunkedUpload(body.kind, body.uploadId)
-      return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } })
+  try {
+    if (isOctetStreamRequest(request)) {
+      return handleChunkUpload(request)
     }
 
-    if (body.op === "complete") {
-      return completeChunkedUpload(body.kind, body.uploadId)
+    if (isJsonRequest(request)) {
+      const body = (await request.json().catch(() => null)) as ChunkedUploadRequestBody | null
+      if (!body || typeof body !== "object") return jsonError(400, "Payload invalido.")
+      if (!isAllowedKind(body.kind)) return jsonError(400, "Tipo de upload invalido.")
+      if (!body.uploadId || !isValidUploadId(body.uploadId)) return jsonError(400, "UploadId invalido.")
+
+      if (body.op === "abort") {
+        await abortChunkedUpload(body.kind, body.uploadId)
+        return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } })
+      }
+
+      if (body.op === "complete") {
+        return completeChunkedUpload(body.kind, body.uploadId)
+      }
+
+      return jsonError(400, "Operacao invalida.")
     }
 
-    return jsonError(400, "Operacao invalida.")
-  }
+    if (isMultipartRequest(request)) {
+      return handleMultipartUpload(request)
+    }
 
-  if (isMultipartRequest(request)) {
-    return handleMultipartUpload(request)
+    return jsonError(415, "Content-Type nao suportado.")
+  } catch (error) {
+    return internalUploadError(error)
   }
-
-  return jsonError(415, "Content-Type nao suportado.")
 }
