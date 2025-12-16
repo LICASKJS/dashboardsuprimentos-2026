@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { NextResponse } from "next/server"
-import { readDataFilesConfig, writeDataFilesConfig } from "@/lib/server/data-files"
+import { readDataFilesConfig, resolveDataFilePath, writeDataFilesConfig } from "@/lib/server/data-files"
 
 export const runtime = "nodejs"
 
@@ -43,8 +43,9 @@ export async function POST(request: Request) {
   }
 
   const ext = guessExtension(fileName, kind)
-  const relativeDestPath = path.posix.join(UPLOAD_DIR_REL, `${kind}-${safeTimestamp()}.${ext}`)
-  const destPath = path.join(process.cwd(), relativeDestPath)
+  const destFileName = `${kind}-${safeTimestamp()}.${ext}`
+  const relativeDestPath = path.posix.join(UPLOAD_DIR_REL, destFileName)
+  const destPath = resolveDataFilePath(relativeDestPath)
 
   await fs.mkdir(path.dirname(destPath), { recursive: true })
 
@@ -58,14 +59,12 @@ export async function POST(request: Request) {
 
   if (typeof previous === "string" && previous && previous !== relativeDestPath) {
     const previousNormalized = previous.trim()
-    const isUploads =
-      previousNormalized.startsWith("dados/uploads/") || previousNormalized.startsWith("dados\\uploads\\")
+    const previousPath = resolveDataFilePath(previousNormalized)
+    const uploadsDir = resolveDataFilePath(UPLOAD_DIR_REL)
+    const relativeToUploads = path.relative(path.resolve(uploadsDir), path.resolve(previousPath))
+    const isUploads = relativeToUploads && !relativeToUploads.startsWith("..") && !path.isAbsolute(relativeToUploads)
 
     if (isUploads) {
-      const previousPath = path.isAbsolute(previousNormalized)
-        ? previousNormalized
-        : path.join(process.cwd(), previousNormalized)
-
       await fs.rm(previousPath, { force: true })
     }
   }
@@ -75,4 +74,3 @@ export async function POST(request: Request) {
     { headers: { "Cache-Control": "no-store" } },
   )
 }
-

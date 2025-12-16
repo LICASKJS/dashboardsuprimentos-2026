@@ -12,7 +12,6 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Dashboard de Suprimentos 2026",
   description: "Sistema Integrado de Gestão de Compras e Suprimentos",
-  generator: "v0.app",
   icons: {
     icon: "/ico.png",
     apple: "/ico.png",
