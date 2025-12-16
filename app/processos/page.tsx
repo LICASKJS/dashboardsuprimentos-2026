@@ -6,8 +6,8 @@ import { getProcessosPageData } from "@/lib/server/export-suprimentos"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-export default function ProcessosPage({ searchParams }: { searchParams: SearchParams }) {
-  const filters = parseDashboardFilters(searchParams, { granularity: "month" })
+export default async function ProcessosPage({ searchParams }: { searchParams: SearchParams | Promise<SearchParams> }) {
+  const filters = parseDashboardFilters(await Promise.resolve(searchParams), { granularity: "month" })
   const data = getProcessosPageData(filters, { top: 10 })
 
   return (
@@ -26,4 +26,3 @@ export default function ProcessosPage({ searchParams }: { searchParams: SearchPa
     </main>
   )
 }
-

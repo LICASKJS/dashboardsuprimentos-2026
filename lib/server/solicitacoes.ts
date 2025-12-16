@@ -19,6 +19,7 @@ import {
 } from "@/lib/server/excel"
 
 type SolicitacoesCache = {
+  filePath: string
   mtimeMs: number
   table: ExcelTable
 }
@@ -28,10 +29,10 @@ let cache: SolicitacoesCache | undefined
 function loadSolicitacoesTable() {
   const filePath = resolveDataPath("dados/FW_Solicitacoes.xlsx")
   const mtimeMs = getFileMtimeMs(filePath)
-  if (cache?.mtimeMs === mtimeMs) return cache.table
+  if (cache?.filePath === filePath && cache?.mtimeMs === mtimeMs) return cache.table
 
   const table = readExcelTable(filePath, "Gd_Edicao")
-  cache = { mtimeMs, table }
+  cache = { filePath, mtimeMs, table }
   return table
 }
 

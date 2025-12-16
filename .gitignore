@@ -28,6 +28,7 @@ coverage/
 .eslintcache
 .cache/
 .turbo/
+*.tsbuildinfo
 
 # IDE/editor
 .vscode/
@@ -40,5 +41,8 @@ Desktop.ini
 *.lnk
 
 # local/large data exports
-dados/*.xls
-dados/*.xlsx
+dados/**/*.xls
+dados/**/*.xlsx
+dados/.upload-*
+dados/uploads/
+dados/.data-files.json

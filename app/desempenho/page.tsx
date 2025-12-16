@@ -7,8 +7,8 @@ import { getDesempenhoPageData } from "@/lib/server/export-suprimentos"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-export default function DesempenhoPage({ searchParams }: { searchParams: SearchParams }) {
-  const filters = parseDashboardFilters(searchParams, { granularity: "month" })
+export default async function DesempenhoPage({ searchParams }: { searchParams: SearchParams | Promise<SearchParams> }) {
+  const filters = parseDashboardFilters(await Promise.resolve(searchParams), { granularity: "month" })
   const data = getDesempenhoPageData(filters, { top: 12 })
 
   return (
@@ -28,4 +28,3 @@ export default function DesempenhoPage({ searchParams }: { searchParams: SearchP
     </main>
   )
 }
-

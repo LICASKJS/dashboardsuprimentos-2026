@@ -1,8 +1,8 @@
 import "server-only"
 
 import fs from "node:fs"
-import path from "node:path"
 import * as XLSX from "xlsx"
+import { resolveDataPathWithUploads } from "@/lib/server/data-files"
 
 export type ExcelTable = {
   header: string[]
@@ -11,11 +11,15 @@ export type ExcelTable = {
 }
 
 export function resolveDataPath(relativePath: string) {
-  return path.join(process.cwd(), relativePath)
+  return resolveDataPathWithUploads(relativePath)
 }
 
 export function getFileMtimeMs(filePath: string) {
-  return fs.statSync(filePath).mtimeMs
+  try {
+    return fs.statSync(filePath).mtimeMs
+  } catch {
+    return 0
+  }
 }
 
 export function buildHeaderIndex(header: unknown[]): Record<string, number[]> {
@@ -41,6 +45,10 @@ export function getCell(row: unknown[], colIndex: number | undefined) {
 }
 
 export function readExcelTable(filePath: string, sheetName?: string): ExcelTable {
+  if (!fs.existsSync(filePath)) {
+    return { header: [], rows: [], index: {} }
+  }
+
   const fileBuffer = fs.readFileSync(filePath)
   const arrayBuffer = fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength)
   const workbook = XLSX.read(arrayBuffer, { type: "array", cellDates: true })

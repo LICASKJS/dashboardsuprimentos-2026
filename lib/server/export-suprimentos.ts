@@ -20,6 +20,7 @@ import {
 } from "@/lib/server/excel"
 
 type ExportCache = {
+  filePath: string
   mtimeMs: number
   table: ExcelTable
 }
@@ -29,10 +30,10 @@ let cache: ExportCache | undefined
 function loadExportTable() {
   const filePath = resolveDataPath("dados/fs_export_suprimentos_v2.xls")
   const mtimeMs = getFileMtimeMs(filePath)
-  if (cache?.mtimeMs === mtimeMs) return cache.table
+  if (cache?.filePath === filePath && cache?.mtimeMs === mtimeMs) return cache.table
 
   const table = readExcelTable(filePath, "Sheet1")
-  cache = { mtimeMs, table }
+  cache = { filePath, mtimeMs, table }
   return table
 }
 

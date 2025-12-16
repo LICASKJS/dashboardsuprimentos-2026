@@ -5,6 +5,7 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Home, Users, Settings, Clock, AlertTriangle } from "lucide-react"
+import { ExcelDataUploadButton } from "@/components/excel-data-upload-button"
 
 const navLinks = [
   { href: "/", label: "Início", icon: Home },
@@ -39,37 +40,39 @@ export function Header() {
               </div>
             </Link>
 
-            <nav className="flex items-center gap-1">
-              {navLinks.map((link) => {
-                const Icon = link.icon
-                const isActive = pathname === link.href
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={cn(
-                      "relative px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-2 group",
-                      isActive ? "text-white" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80",
-                    )}
-                  >
-                    {isActive && (
-                      <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl shadow-md shadow-orange-500/25" />
-                    )}
-                    <Icon
+            <div className="flex items-center gap-2">
+              <nav className="flex items-center gap-1">
+                {navLinks.map((link) => {
+                  const Icon = link.icon
+                  const isActive = pathname === link.href
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
                       className={cn(
-                        "w-4 h-4 relative z-10",
-                        isActive ? "text-white" : "text-gray-500 group-hover:text-orange-500",
+                        "relative px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-2 group",
+                        isActive ? "text-white" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80",
                       )}
-                    />
-                    <span className="relative z-10 hidden md:inline">{link.label}</span>
-                  </Link>
-                )
-              })}
-            </nav>
+                    >
+                      {isActive && (
+                        <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl shadow-md shadow-orange-500/25" />
+                      )}
+                      <Icon
+                        className={cn(
+                          "w-4 h-4 relative z-10",
+                          isActive ? "text-white" : "text-gray-500 group-hover:text-orange-500",
+                        )}
+                      />
+                      <span className="relative z-10 hidden md:inline">{link.label}</span>
+                    </Link>
+                  )
+                })}
+              </nav>
+              <ExcelDataUploadButton />
+            </div>
           </div>
         </div>
       </div>
     </header>
   )
 }
-

@@ -8,8 +8,8 @@ import { getExpiringItemsPageData } from "@/lib/server/solicitacoes"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-export default function ItensVencimentoPage({ searchParams }: { searchParams: SearchParams }) {
-  const filters = parseDashboardFilters(searchParams, { granularity: "month" })
+export default async function ItensVencimentoPage({ searchParams }: { searchParams: SearchParams | Promise<SearchParams> }) {
+  const filters = parseDashboardFilters(await Promise.resolve(searchParams), { granularity: "month" })
   const data = getExpiringItemsPageData({ filters })
 
   return (

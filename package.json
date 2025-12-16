@@ -5,6 +5,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev --disable-source-maps",
+    "dev:clean": "node scripts/clean-next.js && next dev --disable-source-maps",
     "lint": "eslint .",
     "start": "next start"
   },

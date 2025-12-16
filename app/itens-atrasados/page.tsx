@@ -8,8 +8,8 @@ import { getDelayedItemsPageData } from "@/lib/server/solicitacoes"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-export default function ItensAtrasadosPage({ searchParams }: { searchParams: SearchParams }) {
-  const filters = parseDashboardFilters(searchParams, { granularity: "month" })
+export default async function ItensAtrasadosPage({ searchParams }: { searchParams: SearchParams | Promise<SearchParams> }) {
+  const filters = parseDashboardFilters(await Promise.resolve(searchParams), { granularity: "month" })
   const data = getDelayedItemsPageData({ filters })
 
   return (
