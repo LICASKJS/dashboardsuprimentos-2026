@@ -46,3 +46,4 @@ dados/**/*.xlsx
 dados/.upload-*
 dados/uploads/
 dados/.data-files.json
+dados/planner/

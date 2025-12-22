@@ -226,7 +226,10 @@ async function handleMultipartUpload(request: Request) {
   const destPath = resolveDataFilePath(relativeDestPath)
 
   await fs.mkdir(path.dirname(destPath), { recursive: true })
-  await pipeline(Readable.fromWeb(file.stream() as ReadableStream), fsSync.createWriteStream(destPath))
+  await pipeline(
+    Readable.fromWeb(file.stream() as unknown as import("node:stream/web").ReadableStream),
+    fsSync.createWriteStream(destPath),
+  )
 
   const stat = await fs.stat(destPath)
   await setActiveFile(kind, relativeDestPath)

@@ -1,15 +1,6 @@
 export const BUYER_BLANK_LABEL = "Em branco"
 
-const EXCLUDED_BUYER_SUBSTRINGS = [
-  "thiago",
-  "rose",
-  "bruna",
-  "joice",
-  "savio",
-  "anderson",
-  "jamerson",
-  "pedro",
-]
+const EXCLUDED_BUYER_SUBSTRINGS: string[] = []
 
 export function shouldExcludeBuyer(value: string | undefined) {
   const normalized = value?.trim().toLowerCase()

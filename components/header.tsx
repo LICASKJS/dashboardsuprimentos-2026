@@ -4,7 +4,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Home, Users, Settings, Clock, AlertTriangle } from "lucide-react"
+import { Home, Users, Settings, Clock, AlertTriangle, KanbanSquare } from "lucide-react"
 import { ExcelDataUploadButton } from "@/components/excel-data-upload-button"
 
 const navLinks = [
@@ -13,6 +13,7 @@ const navLinks = [
   { href: "/processos", label: "Processos", icon: Settings },
   { href: "/desempenho", label: "Desempenho", icon: Clock },
   { href: "/itens-atrasados", label: "Itens Atrasados", icon: AlertTriangle },
+  { href: "/planner", label: "Planner", icon: KanbanSquare },
 ]
 
 export function Header() {
